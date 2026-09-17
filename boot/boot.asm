@@ -19,8 +19,7 @@ start:
     mov  es, ax        ; Extra Segment = 0
     mov  ss, ax        ; Stack Segment = 0
     mov  sp, 0x7C00    ; Stack pointer just below our code
-    sti                ; Re-enable interrupts
-
+    cli                ; Keep interrupts disabled until the kernel sets up the IDT
     ; Save drive number (BIOS stores it in dl)
     mov  [boot_drive], dl
 
