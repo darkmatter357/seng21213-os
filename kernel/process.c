@@ -16,6 +16,7 @@ void process_init(void)
         process_table[i].esp = 0;
         process_table[i].eip = 0;
         process_table[i].next = (pcb_t *)0;
+        process_table[i].thread_list = (struct thread *)0;
     }
 }
 
@@ -32,6 +33,7 @@ pcb_t *process_create(void (*entry)(void))
             p->state = READY;
             p->eip = (uint32_t)entry;
             p->next = (pcb_t *)0;
+            p->thread_list = (struct thread *)0;
 
             stack = &p->stack[STACK_SIZE / 4];
 

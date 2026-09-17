@@ -6,6 +6,9 @@
 #define MAX_PROCESSES 16
 #define STACK_SIZE 4096
 
+/* Forward declaration: thread.h defines the full thread structure. */
+struct thread;
+
 typedef enum {
     READY,
     RUNNING,
@@ -18,7 +21,12 @@ typedef struct pcb {
     proc_state_t state;
     uint32_t esp;
     uint32_t eip;
+
     uint32_t stack[STACK_SIZE / 4];
+
+    /* Threads belonging to this process. */
+    struct thread *thread_list;
+
     struct pcb *next;
 } pcb_t;
 

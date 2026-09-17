@@ -4,6 +4,7 @@
 #include "pit.h"
 #include "scheduler.h"
 #include "process.h"
+#include "thread.h"
 
 extern void irq0_handler(void);
 
@@ -11,45 +12,55 @@ static volatile uint32_t timer_ticks = 0;
 
 uint32_t timer_tick(uint32_t current_esp)
 {
-    pcb_t *current;
-    pcb_t *next;
+    pcb_t *current_process;
+    thread_t *current_thread;
+    thread_t *next_thread;
 
     timer_ticks++;
 
-    current = scheduler_current();
-
     /*
-     * Save the interrupted process's CPU context.
+     * Save the currently running thread's context when a thread
+     * is active. Otherwise save the current process context.
      */
-    if (current != (pcb_t *)0)
-        current->esp = current_esp;
+    current_thread = scheduler_current_thread();
+
+    if (current_thread != (thread_t *)0) {
+        current_thread->esp = current_esp;
+    } else {
+        current_process = scheduler_current();
+
+        if (current_process != (pcb_t *)0)
+            current_process->esp = current_esp;
+    }
 
     /*
-     * Select the next READY process.
+     * Select the next runnable execution context.
      */
     scheduler_tick();
 
-    next = scheduler_current();
+    next_thread = scheduler_current_thread();
 
     pic_send_eoi(0);
 
     /*
-     * If a process is available, restore its saved context.
+     * A thread has priority when threads are present.
      */
-    if (next != (pcb_t *)0)
-        return next->esp;
+    if (next_thread != (thread_t *)0)
+        return next_thread->esp;
 
     /*
-     * Otherwise continue the interrupted context.
+     * Otherwise continue using the process scheduler.
      */
+    current_process = scheduler_current();
+
+    if (current_process != (pcb_t *)0)
+        return current_process->esp;
+
     return current_esp;
 }
 
 void interrupts_init(void)
 {
-    /*
-     * IRQ0 = interrupt vector 32 after PIC remapping.
-     */
     idt_set_gate(32, (uint32_t)irq0_handler);
 
     pic_init();

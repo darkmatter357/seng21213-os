@@ -16,7 +16,9 @@
 #include "idt.h"
 #include "interrupts.h"
 #include "../include/types.h"
-
+#include "thread.h"
+#include "mutex.h"
+#include "semaphore.h"
 /* ---------------------------------------------------------------------------
  * Test processes
  * --------------------------------------------------------------------------*/
@@ -34,6 +36,169 @@ static void test_process_2(void)
         __asm__ volatile ("nop");
     }
 }
+static void print_uint(uint32_t value)
+{
+    char buffer[11];
+    int i = 10;
+
+    buffer[i] = '\0';
+
+    if (value == 0) {
+        vga_puts("0");
+        return;
+    }
+
+    while (value > 0) {
+        buffer[--i] = (char)('0' + (value % 10));
+        value /= 10;
+    }
+
+    vga_puts(&buffer[i]);
+}
+static volatile int myglobal = 0;
+static volatile int workers_done = 0;
+static mutex_t global_mutex;
+
+#define BUFFER_SIZE 5
+
+static int buffer[BUFFER_SIZE];
+static int buffer_in = 0;
+static int buffer_out = 0;
+
+static semaphore_t items;
+static semaphore_t empty;
+static semaphore_t buffer_mutex;
+
+static volatile int producer_done = 0;
+static volatile int consumer_done = 0;
+static void buffer_producer(void *arg)
+{
+    int i;
+    (void)arg;
+
+    for (i = 1; i <= 10; i++) {
+        sem_wait(&empty);
+        sem_wait(&buffer_mutex);
+
+        buffer[buffer_in] = i;
+        buffer_in = (buffer_in + 1) % BUFFER_SIZE;
+
+        vga_puts_color("[BUFFER] Produced: ", VGA_LIGHT_CYAN, VGA_BLACK);
+        print_uint((uint32_t)i);
+        vga_puts_color("\n", VGA_LIGHT_CYAN, VGA_BLACK);
+
+        sem_signal(&buffer_mutex);
+        sem_signal(&items);
+
+        __asm__ volatile ("hlt");
+    }
+
+    producer_done++;
+    thread_exit();
+
+    for (;;)
+        __asm__ volatile ("hlt");
+}
+
+static void buffer_consumer(void *arg)
+{
+    int i;
+    int value;
+    (void)arg;
+
+    for (i = 0; i < 10; i++) {
+        sem_wait(&items);
+        sem_wait(&buffer_mutex);
+
+        value = buffer[buffer_out];
+        buffer_out = (buffer_out + 1) % BUFFER_SIZE;
+
+        vga_puts_color("[BUFFER] Consumed: ", VGA_LIGHT_GREEN, VGA_BLACK);
+        print_uint((uint32_t)value);
+        vga_puts_color("\n", VGA_LIGHT_GREEN, VGA_BLACK);
+
+        sem_signal(&buffer_mutex);
+        sem_signal(&empty);
+
+        __asm__ volatile ("hlt");
+    }
+
+    consumer_done++;
+    thread_exit();
+
+    for (;;)
+        __asm__ volatile ("hlt");
+}
+
+static void race_worker(void *arg)
+{
+    int i;
+    (void)arg;
+
+    for (i = 0; i < 20; i++) {
+        int value = myglobal;
+
+/* Deliberately allow another thread to run after the read. */
+__asm__ volatile ("hlt");
+
+myglobal = value + 1;
+}
+    workers_done++;
+    thread_exit();
+    for (;;)
+        __asm__ volatile ("hlt");
+}
+
+static void mutex_worker(void *arg)
+{
+    int i;
+    (void)arg;
+
+    for (i = 0; i < 20; i++) {
+        mutex_lock(&global_mutex);
+
+        myglobal++;
+
+        mutex_unlock(&global_mutex);
+
+        for (volatile uint32_t delay = 0; delay < 100000; delay++)
+            __asm__ volatile ("nop");
+    }
+
+        workers_done++;
+    thread_exit();
+    for (;;)
+        __asm__ volatile ("hlt");
+}
+static void thread_demo(void *arg)
+{
+    const char *name = (const char *)arg;
+    int i;
+
+    for (i = 0; i < 5; i++) {
+        vga_puts_color(
+            "\n[THREAD] Running: ",
+            VGA_LIGHT_CYAN,
+            VGA_BLACK
+        );
+
+        vga_puts(name);
+
+        vga_puts_color(
+            "\n",
+            VGA_LIGHT_CYAN,
+            VGA_BLACK
+        );
+
+        for (volatile uint32_t delay = 0; delay < 500000; delay++)
+            __asm__ volatile ("nop");
+    }
+
+    thread_exit();
+
+    for (;;)
+        __asm__ volatile ("hlt");
+}
 
 /* ---------------------------------------------------------------------------
  * Forward declarations of shell commands
@@ -46,7 +211,10 @@ static void cmd_echo(const char *args);
 static void cmd_mem(void);
 static void cmd_ps(void);
 static void cmd_kill(const char *args);
-
+static void cmd_threadtest(void);
+static void cmd_race(void);
+static void cmd_mutexrace(void);
+static void cmd_buffer(void);
 /* ---------------------------------------------------------------------------
  * Utility: minimal string helpers
  * --------------------------------------------------------------------------*/
@@ -324,6 +492,143 @@ static void cmd_mem(void)
 static char shell_buf[256];
 static char prompt[] = "\n  ksh> ";
 
+static void cmd_threadtest(void)
+{
+    thread_t *t1;
+    thread_t *t2;
+
+    vga_puts_color(
+        "\nStarting Stage 2 thread test...\n",
+        VGA_LIGHT_GREEN,
+        VGA_BLACK
+    );
+
+    t1 = thread_create(thread_demo, (void *)"T1");
+    t2 = thread_create(thread_demo, (void *)"T2");
+
+    if (t1 != (thread_t *)0 && t2 != (thread_t *)0) {
+        vga_puts_color(
+            "Created threads T1 and T2.\n",
+            VGA_LIGHT_GREEN,
+            VGA_BLACK
+        );
+    } else {
+        vga_puts_color(
+            "Thread creation failed.\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+    }
+}
+static void cmd_race(void)
+{
+    thread_t *t1;
+    thread_t *t2;
+
+        myglobal = 0;
+    workers_done = 0;
+
+    vga_puts_color(
+        "\nStarting race-condition test...\n",
+        VGA_LIGHT_GREEN,
+        VGA_BLACK
+    );
+
+    t1 = thread_create(race_worker, (void *)0);
+    t2 = thread_create(race_worker, (void *)0);
+
+    if (t1 == (thread_t *)0 || t2 == (thread_t *)0) {
+        vga_puts_color(
+            "Failed to create race threads.\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    vga_puts_color(
+        "Two workers created. Expected without mutex: possible lost updates.\n",
+        VGA_LIGHT_GREEN,
+        VGA_BLACK
+    );
+     while (workers_done < 2)
+        __asm__ volatile ("hlt");
+
+    vga_puts_color("Race test finished. Final myglobal = ", VGA_LIGHT_GREEN, VGA_BLACK);
+    print_uint((uint32_t)myglobal);
+    vga_puts_color("\n", VGA_LIGHT_GREEN, VGA_BLACK);
+}
+static void cmd_buffer(void)
+{
+    thread_t *producer;
+    thread_t *consumer;
+
+    buffer_in = 0;
+    buffer_out = 0;
+    producer_done = 0;
+    consumer_done = 0;
+
+    semaphore_init(&items, 0);
+    semaphore_init(&empty, BUFFER_SIZE);
+    semaphore_init(&buffer_mutex, 1);
+
+    vga_puts_color("\nStarting bounded-buffer test...\n",
+                   VGA_LIGHT_CYAN, VGA_BLACK);
+
+    producer = thread_create(buffer_producer, (void *)0);
+    consumer = thread_create(buffer_consumer, (void *)0);
+
+    if (producer == (thread_t *)0 || consumer == (thread_t *)0) {
+        vga_puts_color("Failed to create buffer threads.\n",
+                       VGA_LIGHT_RED, VGA_BLACK);
+        return;
+    }
+
+    while (producer_done < 1 || consumer_done < 1)
+        __asm__ volatile ("hlt");
+
+    vga_puts_color("Bounded-buffer test finished successfully.\n",
+                   VGA_LIGHT_GREEN, VGA_BLACK);
+}
+static void cmd_mutexrace(void)
+{
+    thread_t *t1;
+    thread_t *t2;
+
+    myglobal = 0;
+workers_done = 0;
+    mutex_init(&global_mutex);
+
+    vga_puts_color(
+        "\nStarting mutex-protected race test...\n",
+        VGA_LIGHT_GREEN,
+        VGA_BLACK
+    );
+
+    t1 = thread_create(mutex_worker, (void *)0);
+    t2 = thread_create(mutex_worker, (void *)0);
+
+    if (t1 == (thread_t *)0 || t2 == (thread_t *)0) {
+        vga_puts_color(
+            "Failed to create mutex threads.\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    vga_puts_color(
+        "Two workers created. Protected result should be 40.\n",
+        VGA_LIGHT_GREEN,
+        VGA_BLACK
+    );
+  while (workers_done < 2)
+    __asm__ volatile ("hlt");
+
+vga_puts_color("Mutex test finished. Final myglobal = ", VGA_LIGHT_GREEN, VGA_BLACK);
+print_uint((uint32_t)myglobal);
+vga_puts_color("\n", VGA_LIGHT_GREEN, VGA_BLACK);
+}
 static void shell_run(void)
 {
     vga_puts_color(
@@ -366,6 +671,24 @@ static void shell_run(void)
                 cmd_ps();
                 continue;
             }
+
+            if (k_strcmp(cmd, "threadtest") == 0) {
+               cmd_threadtest();
+               continue;
+            }
+            if (k_strcmp(cmd, "race") == 0) {
+    cmd_race();
+    continue;
+}
+
+if (k_strcmp(cmd, "mutexrace") == 0) {
+    cmd_mutexrace();
+    continue;
+}
+if (k_strcmp(cmd, "buffer") == 0) {
+    cmd_buffer();
+    continue;
+}
 
             if (k_strcmp(cmd, "mem") == 0) {
                 cmd_mem();
@@ -413,7 +736,7 @@ void kernel_main(void)
      */
     process_init();
     scheduler_init();
-
+    thread_init();
     /*
      * Create three processes.
      */
