@@ -210,6 +210,7 @@ static void cmd_clear(void);
 static void cmd_about(void);
 static void cmd_echo(const char *args);
 static void cmd_mem(void);
+static void cmd_memtest(void);
 static void cmd_ps(void);
 static void cmd_kill(const char *args);
 static void cmd_threadtest(void);
@@ -501,6 +502,49 @@ static void cmd_mem(void)
     print_uint(pmm_total_frames() * PMM_FRAME_SIZE / (1024 * 1024));
     vga_puts(" MB\n\n");
 }
+static void cmd_memtest(void)
+{
+    uint32_t frame1;
+    uint32_t frame2;
+
+    vga_puts_color(
+        "\n  PMM Allocation Test\n",
+        VGA_LIGHT_CYAN,
+        VGA_BLACK
+    );
+
+    vga_puts("  Free frames before: ");
+    print_uint(pmm_free_frames());
+    vga_puts("\n");
+
+    frame1 = pmm_alloc_frame();
+    frame2 = pmm_alloc_frame();
+
+    vga_puts("  Allocated frame 1: 0x");
+    print_uint(frame1);
+    vga_puts("\n");
+
+    vga_puts("  Allocated frame 2: 0x");
+    print_uint(frame2);
+    vga_puts("\n");
+
+    vga_puts("  Free frames after allocation: ");
+    print_uint(pmm_free_frames());
+    vga_puts("\n");
+
+    pmm_free_frame(frame1);
+    pmm_free_frame(frame2);
+
+    vga_puts("  Free frames after freeing: ");
+    print_uint(pmm_free_frames());
+    vga_puts("\n");
+
+    vga_puts_color(
+        "  PMM allocation test complete.\n\n",
+        VGA_LIGHT_GREEN,
+        VGA_BLACK
+    );
+}
 
 /* ---------------------------------------------------------------------------
  * Shell process
@@ -709,6 +753,10 @@ if (k_strcmp(cmd, "buffer") == 0) {
 
             if (k_strcmp(cmd, "mem") == 0) {
                 cmd_mem();
+                continue;
+            }
+            if (k_strcmp(cmd, "memtest") == 0) {
+                cmd_memtest();
                 continue;
             }
 
