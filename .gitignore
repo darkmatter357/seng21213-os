@@ -1,0 +1,6 @@
+build/
+seng21213.img
+*.img
+*.o
+*.bin
+*.elf
