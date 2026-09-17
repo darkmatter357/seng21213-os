@@ -62,6 +62,17 @@ void vmm_init(void)
         : "r"(vmm_directory_phys)
         : "memory"
     );
+/*
+ * Enable paging by setting CR0.PG.
+ */
+__asm__ volatile (
+    "mov %%cr0, %%eax\n"
+    "or $0x80000000, %%eax\n"
+    "mov %%eax, %%cr0"
+    :
+    :
+    : "eax", "memory"
+);
 }
 
 uint32_t vmm_get_directory(void)

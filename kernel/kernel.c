@@ -57,6 +57,16 @@ static void print_uint(uint32_t value)
 
     vga_puts(&buffer[i]);
 }
+static void print_hex(uint32_t value)
+{
+    const char *hex = "0123456789ABCDEF";
+
+    vga_puts("0x");
+
+    for (int shift = 28; shift >= 0; shift -= 4) {
+        vga_putchar(hex[(value >> shift) & 0xF]);
+    }
+}
 static volatile int myglobal = 0;
 static volatile int workers_done = 0;
 static mutex_t global_mutex;
@@ -212,6 +222,7 @@ static void cmd_about(void);
 static void cmd_echo(const char *args);
 static void cmd_mem(void);
 static void cmd_memtest(void);
+static void cmd_vmmtest(void);
 static void cmd_ps(void);
 static void cmd_kill(const char *args);
 static void cmd_threadtest(void);
@@ -546,6 +557,66 @@ static void cmd_memtest(void)
         VGA_BLACK
     );
 }
+static void cmd_vmmtest(void)
+{
+    uint32_t virtual_addr = 0x003F0123;
+    uint32_t physical_addr = 0x00200000;
+    uint32_t translated;
+
+    vga_puts_color(
+        "\n  VMM Mapping Test\n",
+        VGA_LIGHT_CYAN,
+        VGA_BLACK
+    );
+
+    vga_puts("  Mapping virtual page...\n");
+
+    vmm_map_page(virtual_addr, physical_addr);
+
+    translated = vmm_get_physical(virtual_addr);
+
+    vga_puts("  Virtual address : ");
+    print_hex(virtual_addr);
+    vga_puts("\n");
+
+    vga_puts("  Physical address: ");
+    print_hex(translated);
+    vga_puts("\n");
+
+    if (translated == (physical_addr + (virtual_addr & 0xFFF))) {
+        vga_puts_color(
+            "  Mapping test: PASS\n",
+            VGA_LIGHT_GREEN,
+            VGA_BLACK
+        );
+    } else {
+        vga_puts_color(
+            "  Mapping test: FAIL\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+    }
+
+    vmm_unmap_page(virtual_addr);
+
+    translated = vmm_get_physical(virtual_addr);
+
+    if (translated == 0) {
+        vga_puts_color(
+            "  Unmapping test: PASS\n",
+            VGA_LIGHT_GREEN,
+            VGA_BLACK
+        );
+    } else {
+        vga_puts_color(
+            "  Unmapping test: FAIL\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+    }
+
+    vga_puts("  VMM test complete.\n\n");
+}
 
 /* ---------------------------------------------------------------------------
  * Shell process
@@ -760,6 +831,11 @@ if (k_strcmp(cmd, "buffer") == 0) {
                 cmd_memtest();
                 continue;
             }
+
+            if (k_strcmp(cmd, "vmmtest") == 0) {
+    cmd_vmmtest();
+    continue;
+}
 
             if (k_strncmp(cmd, "echo ", 5) == 0) {
                 cmd_echo(k_ltrim(cmd + 5));
