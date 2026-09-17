@@ -19,6 +19,7 @@
 #include "thread.h"
 #include "mutex.h"
 #include "semaphore.h"
+#include "pmm.h"
 /* ---------------------------------------------------------------------------
  * Test processes
  * --------------------------------------------------------------------------*/
@@ -473,16 +474,32 @@ static void cmd_kill(const char *args)
 static void cmd_mem(void)
 {
     vga_puts_color(
-        "\n  Memory Map (stub)\n",
+        "\n  Physical Memory Manager\n",
         VGA_LIGHT_CYAN,
         VGA_BLACK
     );
 
     vga_puts("  ---------------------------------------------\n");
-    vga_puts("  0x00000000 – 0x000FFFFF  : First 1 MB\n");
-    vga_puts("  0x00100000 – 0x00EFFFFF  : Extended memory\n");
-    vga_puts("  0x00F00000 – 0x00FFFFFF  : BIOS / ROM area\n");
-    vga_puts("  0xB8000    – 0xBFFFF     : VGA frame buffer\n\n");
+
+    vga_puts("  Frame size : ");
+    print_uint(PMM_FRAME_SIZE);
+    vga_puts(" bytes\n");
+
+    vga_puts("  Total frames: ");
+    print_uint(pmm_total_frames());
+    vga_puts("\n");
+
+    vga_puts("  Used frames : ");
+    print_uint(pmm_used_frames());
+    vga_puts("\n");
+
+    vga_puts("  Free frames : ");
+    print_uint(pmm_free_frames());
+    vga_puts("\n");
+
+    vga_puts("  Total memory: ");
+    print_uint(pmm_total_frames() * PMM_FRAME_SIZE / (1024 * 1024));
+    vga_puts(" MB\n\n");
 }
 
 /* ---------------------------------------------------------------------------
@@ -730,6 +747,7 @@ void kernel_main(void)
 {
     vga_init();
     kb_init();
+    pmm_init();
 
     /*
      * Initialise process management and scheduler.
