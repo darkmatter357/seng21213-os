@@ -20,6 +20,7 @@
 #include "mutex.h"
 #include "semaphore.h"
 #include "pmm.h"
+#include "vmm.h"
 /* ---------------------------------------------------------------------------
  * Test processes
  * --------------------------------------------------------------------------*/
@@ -794,8 +795,9 @@ if (k_strcmp(cmd, "buffer") == 0) {
 void kernel_main(void)
 {
     vga_init();
-    kb_init();
-    pmm_init();
+kb_init();
+pmm_init();
+vmm_init();
 
     /*
      * Initialise process management and scheduler.
