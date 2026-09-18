@@ -30,25 +30,24 @@ start:
     call print_rm
 
 ; ---------------------------------------------------------------------------
-; Load kernel: read sectors 2..65 from disk into memory at 0x1000:0x0000
-; This gives us 64 × 512 = 32 768 bytes for the kernel (Stage 0)
+; Load Stage 2 from sector 2 into physical address 0x7000
 ; ---------------------------------------------------------------------------
-load_kernel:
-    mov  bx, 0x1000        ; ES:BX = 0x10000 (kernel load address)
+load_stage2:
+    mov  bx, 0x0700        ; ES:BX = 0x7000
     mov  es, bx
     xor  bx, bx
 
     mov  ah, 0x02          ; BIOS read sectors
-    mov  al, 64            ; Number of sectors to read
+    mov  al, 1             ; Stage 2 occupies one sector
     mov  ch, 0             ; Cylinder 0
-    mov  cl, 2             ; Start from sector 2 (sector 1 is MBR)
+    mov  cl, 2             ; Sector 2 (sector 1 is MBR)
     mov  dh, 0             ; Head 0
     mov  dl, [boot_drive]  ; Drive number
     int  0x13
     jc   disk_error        ; Carry flag set = error
 
-    mov  si, msg_ok
-    call print_rm
+    ; Jump to Stage 2 at physical address 0x7000
+    jmp  0x0000:0x7000
 
 ; ---------------------------------------------------------------------------
 ; Enter Protected Mode

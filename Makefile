@@ -44,6 +44,9 @@ endif
 BOOT_SRC  := boot/boot.asm
 BOOT_BIN  := boot/boot.bin
 
+STAGE2_SRC := boot/stage2.asm
+STAGE2_BIN := boot/stage2.bin
+
 KERNEL_ASM_SRC := kernel/kernel_entry.asm
 KERNEL_ASM_OBJ := build/kernel_entry.o
 
@@ -97,7 +100,10 @@ $(BOOT_BIN): $(BOOT_SRC)
 	@mkdir -p build
 	@echo "  [AS]  $<"
 	$(AS) -f bin $< -o $@
-
+$(STAGE2_BIN): $(STAGE2_SRC)
+	@mkdir -p build
+	@echo "  [AS]  $<"
+	$(AS) -f bin $< -o $@
 # ---------------------------------------------------------------------------
 # Kernel: Assembly object
 # ---------------------------------------------------------------------------
@@ -136,11 +142,12 @@ $(KERNEL_BIN): $(KERNEL_ELF)
 # ---------------------------------------------------------------------------
 # Disk image: 1.44 MB floppy (boot sector + kernel)
 # ---------------------------------------------------------------------------
-$(OS_IMAGE): $(BOOT_BIN) $(KERNEL_BIN)
+$(OS_IMAGE): $(BOOT_BIN) $(STAGE2_BIN) $(KERNEL_BIN)
 	@echo "  [IMG]  Creating $(OS_IMAGE)..."
 	dd if=/dev/zero  bs=512 count=2880 of=$(OS_IMAGE) 2>/dev/null
 	dd if=$(BOOT_BIN)    conv=notrunc bs=512 count=1    of=$(OS_IMAGE) 2>/dev/null
-	dd if=$(KERNEL_BIN)  conv=notrunc bs=512 seek=1     of=$(OS_IMAGE) 2>/dev/null
+	dd if=$(STAGE2_BIN) conv=notrunc bs=512 seek=1     of=$(OS_IMAGE) 2>/dev/null
+	dd if=$(KERNEL_BIN)  conv=notrunc bs=512 seek=2     of=$(OS_IMAGE) 2>/dev/null
 	@echo "  [IMG]  $(OS_IMAGE) ready ($(shell wc -c < $(KERNEL_BIN)) kernel bytes)"
 
 # ---------------------------------------------------------------------------

@@ -823,7 +823,7 @@ if (k_strcmp(cmd, "buffer") == 0) {
     continue;
 }
 
-            if (k_strcmp(cmd, "mem") == 0) {
+            if ((k_strcmp(cmd, "mem") == 0 || k_strcmp(cmd, "meminfo") == 0)) {
                 cmd_mem();
                 continue;
             }
