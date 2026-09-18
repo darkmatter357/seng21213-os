@@ -21,6 +21,8 @@
 #include "semaphore.h"
 #include "pmm.h"
 #include "vmm.h"
+#include "ramdisk.h"
+#include "fs.h"
 /* ---------------------------------------------------------------------------
  * Test processes
  * --------------------------------------------------------------------------*/
@@ -229,6 +231,11 @@ static void cmd_threadtest(void);
 static void cmd_race(void);
 static void cmd_mutexrace(void);
 static void cmd_buffer(void);
+static void cmd_fstest(void);
+static void cmd_ls(void);
+static void cmd_touch(const char *args);
+static void cmd_cat(const char *args);
+static void cmd_write(const char *args);
 /* ---------------------------------------------------------------------------
  * Utility: minimal string helpers
  * --------------------------------------------------------------------------*/
@@ -762,6 +769,386 @@ vga_puts_color("Mutex test finished. Final myglobal = ", VGA_LIGHT_GREEN, VGA_BL
 print_uint((uint32_t)myglobal);
 vga_puts_color("\n", VGA_LIGHT_GREEN, VGA_BLACK);
 }
+static void cmd_write(const char *args)
+{
+    char *name;
+    char *text;
+    int fd;
+    int bytes_written;
+
+    name = (char *)k_ltrim(args);
+
+    if (*name == '\0') {
+        vga_puts_color(
+            "Usage: write <filename> <text>\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    text = name;
+
+    while (*text != '\0' && *text != ' ')
+        text++;
+
+    if (*text == '\0') {
+        vga_puts_color(
+            "Usage: write <filename> <text>\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    *text = '\0';
+    text++;
+
+    while (*text == ' ')
+        text++;
+
+    if (*text == '\0') {
+        vga_puts_color(
+            "Usage: write <filename> <text>\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    fd = fs_open(name);
+
+    if (fd < 0) {
+        vga_puts_color(
+            "write: file not found\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    bytes_written = fs_write(
+        fd,
+        text,
+        (uint32_t)k_strlen(text)
+    );
+
+    fs_close(fd);
+
+    if (bytes_written < 0) {
+        vga_puts_color(
+            "write: write failed\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    vga_puts_color(
+        "Written successfully.\n",
+        VGA_LIGHT_GREEN,
+        VGA_BLACK
+    );
+}
+
+
+static void cmd_cat(const char *args)
+{
+    const char *name;
+    int fd;
+    int bytes_read;
+    char buffer[FS_MAX_FILE_SIZE + 1];
+
+    name = k_ltrim(args);
+
+    if (*name == '\0') {
+        vga_puts_color(
+            "Usage: cat <filename>\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    fd = fs_open(name);
+
+    if (fd < 0) {
+        vga_puts_color(
+            "cat: file not found\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    bytes_read = fs_read(fd, buffer, FS_MAX_FILE_SIZE);
+
+    if (bytes_read < 0) {
+        fs_close(fd);
+
+        vga_puts_color(
+            "cat: read failed\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    buffer[bytes_read] = '\0';
+
+    vga_puts_color(
+        buffer,
+        VGA_WHITE,
+        VGA_BLACK
+    );
+
+    vga_puts_color(
+        "\n",
+        VGA_WHITE,
+        VGA_BLACK
+    );
+
+    fs_close(fd);
+}
+
+static void cmd_touch(const char *args)
+{
+    const char *name;
+    int result;
+
+    name = k_ltrim(args);
+
+    if (*name == '\0') {
+        vga_puts_color(
+            "Usage: touch <filename>\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    result = fs_create(name);
+
+    if (result < 0) {
+        vga_puts_color(
+            "touch: failed to create file\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    vga_puts_color(
+        "File created: ",
+        VGA_LIGHT_GREEN,
+        VGA_BLACK
+    );
+
+    vga_puts_color(
+        name,
+        VGA_WHITE,
+        VGA_BLACK
+    );
+
+    vga_puts_color(
+        "\n",
+        VGA_LIGHT_GREEN,
+        VGA_BLACK
+    );
+}
+
+static void cmd_ls(void)
+{
+    int count;
+    uint32_t i;
+    char name[FS_FILENAME_MAX];
+
+    count = fs_list();
+
+    vga_puts_color(
+        "\n  Files\n",
+        VGA_LIGHT_CYAN,
+        VGA_BLACK
+    );
+
+    if (count == 0) {
+        vga_puts_color(
+            "  (empty)\n",
+            VGA_LIGHT_GREY,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    for (i = 0; i < FS_MAX_FILES; i++) {
+        if (fs_get_name(i, name) == 0) {
+            vga_puts_color(
+                "  ",
+                VGA_LIGHT_GREY,
+                VGA_BLACK
+            );
+
+            vga_puts_color(
+                name,
+                VGA_WHITE,
+                VGA_BLACK
+            );
+
+            vga_puts_color(
+                "\n",
+                VGA_LIGHT_GREY,
+                VGA_BLACK
+            );
+        }
+    }
+}
+
+static void cmd_fstest(void)
+{
+    int fd;
+    int result;
+    char buffer[64];
+    const char message[] = "Hello from SENG21213-OS!";
+
+    vga_puts_color(
+        "\n  Filesystem Test\n",
+        VGA_LIGHT_CYAN,
+        VGA_BLACK
+    );
+
+    result = fs_create("test.txt");
+
+    if (result < 0) {
+        vga_puts_color(
+            "  create: FAIL\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    vga_puts_color(
+        "  create: PASS\n",
+        VGA_LIGHT_GREEN,
+        VGA_BLACK
+    );
+
+    fd = fs_open("test.txt");
+
+    if (fd < 0) {
+        vga_puts_color(
+            "  open: FAIL\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    vga_puts_color(
+        "  open: PASS\n",
+        VGA_LIGHT_GREEN,
+        VGA_BLACK
+    );
+
+    result = fs_write(fd, message, (uint32_t)(sizeof(message) - 1));
+
+    if (result != (int)(sizeof(message) - 1)) {
+        vga_puts_color(
+            "  write: FAIL\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        fs_close(fd);
+        return;
+    }
+
+    vga_puts_color(
+        "  write: PASS\n",
+        VGA_LIGHT_GREEN,
+        VGA_BLACK
+    );
+
+    fs_close(fd);
+
+    fd = fs_open("test.txt");
+
+    if (fd < 0) {
+        vga_puts_color(
+            "  reopen: FAIL\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    vga_puts_color(
+        "  reopen: PASS\n",
+        VGA_LIGHT_GREEN,
+        VGA_BLACK
+    );
+
+    {
+        uint32_t i;
+
+        for (i = 0; i < sizeof(buffer); i++) {
+            buffer[i] = '\0';
+        }
+    }
+
+    result = fs_read(fd, buffer, sizeof(buffer) - 1);
+
+    if (result != (int)(sizeof(message) - 1)) {
+        vga_puts_color(
+            "  read: FAIL\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        fs_close(fd);
+        return;
+    }
+
+    buffer[result] = '\0';
+
+    vga_puts_color(
+        "  read: PASS\n",
+        VGA_LIGHT_GREEN,
+        VGA_BLACK
+    );
+
+    vga_puts_color(
+        "  data: ",
+        VGA_LIGHT_CYAN,
+        VGA_BLACK
+    );
+    vga_puts(buffer);
+    vga_puts("\n");
+
+    fs_close(fd);
+
+    result = fs_delete("test.txt");
+
+    if (result != 0) {
+        vga_puts_color(
+            "  delete: FAIL\n",
+            VGA_LIGHT_RED,
+            VGA_BLACK
+        );
+        return;
+    }
+
+    vga_puts_color(
+        "  delete: PASS\n",
+        VGA_LIGHT_GREEN,
+        VGA_BLACK
+    );
+
+    vga_puts_color(
+        "  Filesystem test complete.\n",
+        VGA_LIGHT_GREEN,
+        VGA_BLACK
+    );
+}
+
 static void shell_run(void)
 {
     vga_puts_color(
@@ -818,6 +1205,34 @@ if (k_strcmp(cmd, "mutexrace") == 0) {
     cmd_mutexrace();
     continue;
 }
+            if (k_strcmp(cmd, "fstest") == 0) {
+                cmd_fstest();
+                continue;
+            }
+
+            if (k_strcmp(cmd, "ls") == 0) {
+                cmd_ls();
+                continue;
+            }
+
+            if (k_strncmp(cmd, "touch", 5) == 0 &&
+                (cmd[5] == ' ' || cmd[5] == '\0')) {
+                cmd_touch(cmd + 5);
+                continue;
+            }
+
+            if (k_strncmp(cmd, "cat", 3) == 0 &&
+                (cmd[3] == ' ' || cmd[3] == '\0')) {
+                cmd_cat(cmd + 3);
+                continue;
+            }
+
+            if (k_strncmp(cmd, "write", 5) == 0 &&
+                (cmd[5] == ' ' || cmd[5] == '\0')) {
+                cmd_write(cmd + 5);
+                continue;
+            }
+
 if (k_strcmp(cmd, "buffer") == 0) {
     cmd_buffer();
     continue;
@@ -871,9 +1286,11 @@ if (k_strcmp(cmd, "buffer") == 0) {
 void kernel_main(void)
 {
     vga_init();
-kb_init();
-pmm_init();
-vmm_init();
+    ramdisk_init();
+    fs_init();
+    kb_init();
+    pmm_init();
+    vmm_init();
 
     /*
      * Initialise process management and scheduler.

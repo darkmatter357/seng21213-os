@@ -2,7 +2,7 @@
 #include "types.h"
 
 #define MAX_MEMORY_FRAMES 8192
-#define RESERVED_LOW_FRAMES 256
+#define RESERVED_LOW_FRAMES 512
 
 /*
  * One bit represents one 4 KiB physical frame.
